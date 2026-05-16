@@ -1,0 +1,28 @@
+# Python environment
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Database
+*.db
+*.sqlite3
+
+# Data & Uploads (Crucial - keeps repo size small)
+data/sample_meetings/
+uploads/
+
+# Environment Variables
+.env
+
+# Celery/Redis logs or metadata
+celerybeat-schedule
+*.log
+
+# IDE files
+.vscode/
+.idea/
+.DS_Store
+
+files/
