@@ -40,8 +40,7 @@ def update_job_status(job_id: str, status: str, **kwargs):
 @celery_app.task(
     bind=True,
     name='workers.tasks.process_audio_task',
-    autoretry_for=(Exception,),
-    max_retries=3,
+    max_retries=3,  # retries are triggered explicitly below, only for unexpected errors
     default_retry_delay=60,
 )
 def process_audio_task(self, file_path: str, job_id: str):
@@ -88,7 +87,7 @@ def process_audio_task(self, file_path: str, job_id: str):
         logger.info(f"[{job_id}] Validation complete: {len(validated_tasks)} valid tasks")
         
         logger.info(f"[{job_id}] Saving results to database...")
-        tasks_json = json.dumps([t.dict() for t in validated_tasks])
+        tasks_json = json.dumps([t.model_dump() for t in validated_tasks])
         
         update_job_status(
             job_id,
@@ -112,7 +111,7 @@ def process_audio_task(self, file_path: str, job_id: str):
             "status": "completed",
             "transcript_length": len(transcript),
             "tasks_extracted": len(validated_tasks),
-            "tasks": [t.dict() for t in validated_tasks]
+            "tasks": [t.model_dump() for t in validated_tasks]
         }
         
     except FileNotFoundError as e:

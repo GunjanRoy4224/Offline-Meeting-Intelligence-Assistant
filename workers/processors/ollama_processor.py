@@ -106,11 +106,14 @@ async def call_ollama(prompt: str, model: str = OLLAMA_MODEL) -> str:
                 json={
                     "model": model,
                     "prompt": prompt,
-                    "temperature": OLLAMA_TEMPERATURE,
-                    "top_p": OLLAMA_TOP_P,
-                    "top_k": OLLAMA_TOP_K,
-                    "num_predict": OLLAMA_NUM_PREDICT,
                     "stream": False,
+                    # Ollama reads sampling settings from "options"; top-level keys are ignored.
+                    "options": {
+                        "temperature": OLLAMA_TEMPERATURE,
+                        "top_p": OLLAMA_TOP_P,
+                        "top_k": OLLAMA_TOP_K,
+                        "num_predict": OLLAMA_NUM_PREDICT,
+                    },
                 }
             )
 

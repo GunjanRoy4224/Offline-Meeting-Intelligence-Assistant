@@ -15,7 +15,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 import re
 
-from pydantic import BaseModel, Field, validator, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +34,16 @@ class TaskSchema(BaseModel):
     deadline: str = Field(default="TBD", max_length=100)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     
-    @validator('assignee', 'task')
+    @field_validator('assignee', 'task')
+    @classmethod
     def strip_whitespace(cls, v):
         """Remove leading/trailing whitespace."""
         if isinstance(v, str):
             v = v.strip()
         return v
     
-    @validator('assignee')
+    @field_validator('assignee')
+    @classmethod
     def validate_assignee(cls, v):
         """
         Validate assignee field.
@@ -53,7 +55,8 @@ class TaskSchema(BaseModel):
             logger.debug(f"Generic assignee: {v}")
         return v
     
-    @validator('deadline')
+    @field_validator('deadline')
+    @classmethod
     def validate_deadline(cls, v):
         """
         Validate deadline field.
@@ -87,9 +90,8 @@ class TaskSchema(BaseModel):
         logger.warning(f"Unknown deadline format: {v}")
         return "TBD"
     
-    class Config:
-        # Allow extra fields (we'll ignore them)
-        extra = "ignore"
+    # Extra keys from the LLM are ignored rather than rejected
+    model_config = ConfigDict(extra="ignore")
 
 
 # ============================================================================
@@ -334,7 +336,7 @@ def filter_tasks_by_assignee(
 def tasks_to_json(tasks: List[TaskSchema]) -> str:
     """Convert tasks to JSON string."""
     import json
-    return json.dumps([t.dict() for t in tasks], indent=2)
+    return json.dumps([t.model_dump() for t in tasks], indent=2)
 
 
 def tasks_to_csv(tasks: List[TaskSchema]) -> str:
@@ -350,6 +352,6 @@ def tasks_to_csv(tasks: List[TaskSchema]) -> str:
     
     writer.writeheader()
     for task in tasks:
-        writer.writerow(task.dict())
+        writer.writerow(task.model_dump())
     
     return output.getvalue()

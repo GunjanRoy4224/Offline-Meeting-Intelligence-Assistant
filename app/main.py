@@ -142,16 +142,26 @@ def validate_audio_file(file: UploadFile) -> bool:
     return file.content_type in ALLOWED_AUDIO_FORMATS
 
 async def save_upload_file(file: UploadFile, job_id: str) -> Path:
+    """Stream the upload to disk in chunks, enforcing MAX_UPLOAD_SIZE without loading it all in RAM."""
     safe_name = re.sub(r'[^\w.\-]', '_', file.filename)  # Sanitize for ffmpeg/ctranslate2 safety
     file_path = UPLOAD_DIR / f"{job_id}_{safe_name}"
+    written = 0
     try:
         with open(file_path, "wb") as f:
             while chunk := await file.read(CHUNK_SIZE):
+                written += len(chunk)
+                if written > MAX_UPLOAD_SIZE:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File too large. Max size: {MAX_UPLOAD_SIZE / (1024*1024):.0f} MB"
+                    )
                 f.write(chunk)
-        logger.info(f"File saved: {file_path}")
+        logger.info(f"File saved: {file_path} ({written} bytes)")
         return file_path
     except Exception as e:
-        logger.error(f"Error saving file: {e}")
+        file_path.unlink(missing_ok=True)  # never leave partial uploads behind
+        if not isinstance(e, HTTPException):
+            logger.error(f"Error saving file: {e}")
         raise
 
 # ============================================================================
@@ -180,29 +190,23 @@ async def upload_audio(file: UploadFile = File(...)):
                 detail=f"Invalid audio format. Allowed: {', '.join(ALLOWED_AUDIO_FORMATS)}"
             )
         
-        contents = await file.read()
-        if len(contents) > MAX_UPLOAD_SIZE:
-            raise HTTPException(
-                status_code=400,
-                detail=f"File too large. Max size: {MAX_UPLOAD_SIZE / (1024*1024):.0f} MB"
-            )
-        await file.seek(0)
-        
         job_id = str(uuid.uuid4())
         logger.info(f"[{job_id}] New upload: {file.filename}")
         
         file_path = await save_upload_file(file, job_id)
         
+        # Insert the job row first: a fast worker must never UPDATE a row that does not exist yet.
+        save_job_to_db(job_id, file.filename, "pending", JobStatus.QUEUED)
+
         try:
             from workers.tasks import process_audio_task
             task_result = process_audio_task.delay(str(file_path), job_id)
             task_id = task_result.id
             logger.info(f"[{job_id}] Task queued: {task_id}")
+            update_job_in_db(job_id, task_id=task_id)
         except Exception as e:
             logger.warning(f"[{job_id}] Could not queue with Celery: {e}")
-            task_id = None
-        
-        save_job_to_db(job_id, file.filename, task_id or "local", JobStatus.QUEUED)
+            update_job_in_db(job_id, task_id="local")
         
         return UploadResponse(
             job_id=job_id,
